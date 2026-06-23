@@ -1,0 +1,21 @@
+# Standard Ingress used by NGINX, Traefik, HAProxy and Kong.
+# Before applying for a given gateway, set `ingressClassName` to one of:
+#   nginx | traefik | haproxy | kong
+# Host-less rule = matches every request, so you can hit the gateway on
+# localhost (via port-forward) without juggling a Host header.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: httpbin
+spec:
+  ingressClassName: kong
+  rules:
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: httpbin
+                port:
+                  number: 80

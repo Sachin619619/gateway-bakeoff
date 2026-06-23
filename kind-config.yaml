@@ -1,0 +1,10 @@
+# Local Kubernetes cluster for the gateway bake-off.
+# Access to each gateway is via `kubectl port-forward` (see README), so no
+# host port-mappings are needed here — keeps it simple and avoids port clashes
+# when you swap gateways.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+  - role: control-plane
+  - role: worker
+  - role: worker
