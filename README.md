@@ -48,6 +48,9 @@ brew install kind kubectl helm k6
 # Docker Desktop (or Colima) must be running — kind needs a container runtime.
 ```
 
+> **On Ubuntu/Linux?** See **[RUN_UBUNTU.md](RUN_UBUNTU.md)** for the full
+> copy-paste guide (tool installs + every command, Linux-flavored).
+
 ---
 
 ## 1. Create the local cluster + deploy the sample app (once)
