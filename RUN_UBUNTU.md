@@ -47,22 +47,30 @@ curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
 ```
 
 ### k6 — the load-testing tool that measures each gateway
-Fetch k6's signing key directly from k6 over HTTPS (robust — no keyserver and no
-`dirmngr` needed, and it always picks up k6's *current* key):
+Install from k6's official **GitHub release binary**. This is the most reliable
+method — no apt repo and no GPG signing key — so it works in containers,
+Codespaces, and locked-down/corporate networks where the apt-key method fails
+with `NO_PUBKEY` / "repository is not signed" errors.
 ```bash
-sudo apt-get install -y curl                                   # curl, to download the key
-# download k6's signing key from k6 and store it as a keyring:
-curl -fsSL https://dl.k6.io/key.gpg | sudo gpg --dearmor -o /usr/share/keyrings/k6-archive-keyring.gpg
-# add the k6 apt repository, trusting only that key:
-echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
-sudo apt-get update && sudo apt-get install -y k6              # install k6
+sudo apt-get install -y curl tar                              # tools to fetch + extract
+# find the latest k6 version tag from GitHub:
+K6_VER=$(curl -fsSL https://api.github.com/repos/grafana/k6/releases/latest | grep -oP '"tag_name": "\K[^"]+')
+# download + extract the prebuilt binary, then put it on your PATH:
+curl -fsSL "https://github.com/grafana/k6/releases/download/${K6_VER}/k6-${K6_VER}-linux-amd64.tar.gz" -o /tmp/k6.tar.gz
+tar -xzf /tmp/k6.tar.gz -C /tmp
+sudo mv /tmp/k6-*/k6 /usr/local/bin/k6
+k6 version                                                    # confirm it installed
 ```
 
-> **Simplest alternative (no key/repo at all):** `sudo snap install k6`
->
-> Avoid the old `gpg --recv-keys <fingerprint>` keyserver method — it needs
-> `dirmngr` (often missing) and hard-codes a key fingerprint that goes stale when
-> k6 rotates keys, causing `NO_PUBKEY` / "repository is not signed" errors.
+> **Alternatives (only if the binary method above doesn't suit you):**
+> - **Snap** (needs snapd): `sudo snap install k6`
+> - **apt repo** (standard desktops): fetch k6's key over HTTPS, then add the repo —
+>   `curl -fsSL https://dl.k6.io/key.gpg | sudo gpg --dearmor -o /usr/share/keyrings/k6-archive-keyring.gpg`
+>   then `echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list && sudo apt-get update && sudo apt-get install -y k6`.
+>   **Avoid** the old `gpg --recv-keys <fingerprint>` keyserver method — it needs
+>   `dirmngr` and hard-codes a key that goes stale, causing `NO_PUBKEY` errors.
+> - **If a previous apt attempt left a broken k6 repo** (apt update keeps erroring):
+>   `sudo rm -f /etc/apt/sources.list.d/k6.list && sudo apt-get update`
 
 ### Verify everything installed
 ```bash
