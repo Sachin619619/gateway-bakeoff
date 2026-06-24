@@ -47,15 +47,22 @@ curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
 ```
 
 ### k6 — the load-testing tool that measures each gateway
+Fetch k6's signing key directly from k6 over HTTPS (robust — no keyserver and no
+`dirmngr` needed, and it always picks up k6's *current* key):
 ```bash
-sudo apt-get install -y gnupg                    # needed to verify the k6 package signature
-# add k6's signing key:
-sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg \
-  --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
-# add the k6 apt repository:
+sudo apt-get install -y curl                                   # curl, to download the key
+# download k6's signing key from k6 and store it as a keyring:
+curl -fsSL https://dl.k6.io/key.gpg | sudo gpg --dearmor -o /usr/share/keyrings/k6-archive-keyring.gpg
+# add the k6 apt repository, trusting only that key:
 echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
-sudo apt-get update && sudo apt-get install -y k6   # install k6
+sudo apt-get update && sudo apt-get install -y k6              # install k6
 ```
+
+> **Simplest alternative (no key/repo at all):** `sudo snap install k6`
+>
+> Avoid the old `gpg --recv-keys <fingerprint>` keyserver method — it needs
+> `dirmngr` (often missing) and hard-codes a key fingerprint that goes stale when
+> k6 rotates keys, causing `NO_PUBKEY` / "repository is not signed" errors.
 
 ### Verify everything installed
 ```bash
