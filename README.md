@@ -207,3 +207,9 @@ Everything was local and disposable — this removes it completely.
 Istio is also Envoy-based. Install Istio (`istioctl install`) and use its
 `Gateway` + `VirtualService` against the same `httpbin`. Ask and I'll add a
 `2f` section + manifests.
+
+---
+
+## License
+
+Released under the [MIT License](LICENSE).
