@@ -227,7 +227,7 @@ From the k6 summary, copy into `scorecard.md`:
 
 ---
 
-## 4. Optional feature checks (quick, manual)
+## 5. Optional feature checks (quick, manual)
 
 Exercise the rows beyond raw routing:
 
@@ -244,7 +244,7 @@ Exercise the rows beyond raw routing:
 
 ---
 
-## 5. Score & decide
+## 6. Score & decide
 
 Fill in `scorecard.md`. Weight **operational fit** (your team's skills, how it
 will actually be run) alongside the raw numbers — the fastest gateway isn't
@@ -252,7 +252,7 @@ automatically the right one. See the Results & Recommendation at the top.
 
 ---
 
-## 6. Tear it all down
+## 7. Tear it all down
 
 ```bash
 kind delete cluster --name bakeoff
