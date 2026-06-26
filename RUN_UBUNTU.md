@@ -72,9 +72,23 @@ k6 version                                                    # confirm it insta
 > - **If a previous apt attempt left a broken k6 repo** (apt update keeps erroring):
 >   `sudo rm -f /etc/apt/sources.list.d/k6.list && sudo apt-get update`
 
+### mkcert — generates locally-trusted TLS certificates (no browser warning)
+```bash
+# Download the latest mkcert binary for Linux amd64
+MKCERT_VER=$(curl -fsSL https://api.github.com/repos/FiloSottile/mkcert/releases/latest | grep -oP '"tag_name": "\K[^"]+')
+curl -fsSL "https://github.com/FiloSottile/mkcert/releases/download/${MKCERT_VER}/mkcert-${MKCERT_VER}-linux-amd64" -o /tmp/mkcert
+chmod +x /tmp/mkcert && sudo mv /tmp/mkcert /usr/local/bin/mkcert
+
+# Install mkcert's local CA into the system trust store
+# so curl trusts the generated certs without the -k flag
+# Note: requires your password (sudo) once
+sudo apt-get install -y libnss3-tools   # required for mkcert to work with browsers
+mkcert -install
+```
+
 ### Verify everything installed
 ```bash
-docker --version && kind version && kubectl version --client && helm version && k6 version
+docker --version && kind version && kubectl version --client && helm version && k6 version && mkcert --version
 ```
 
 ---
@@ -82,13 +96,34 @@ docker --version && kind version && kubectl version --client && helm version && 
 ## 1. Create the cluster + deploy the sample app (once)
 
 ```bash
+# Clone the repo (on a new machine)
+git clone https://github.com/Sachin619619/gateway-bakeoff.git   # replace with your fork URL if needed
 cd gateway-bakeoff
+
 kind create cluster --name bakeoff --wait 120s   # build a local K8s cluster, wait until it's ready
 kubectl apply -f manifests/httpbin.yaml          # deploy httpbin (the shared test backend)
 kubectl rollout status deploy/httpbin            # wait until httpbin pods are running
 ```
 
 `httpbin` stays up the whole time — every gateway routes to this same app.
+
+### 1a. Generate TLS certificate (for HTTPS tests)
+
+```bash
+# Creates the certs/ folder to store certificate files
+mkdir -p certs
+
+# Generates a TLS certificate valid for localhost and 127.0.0.1
+# tls.crt = the public certificate, tls.key = the private key
+mkcert -cert-file certs/tls.crt -key-file certs/tls.key localhost 127.0.0.1
+
+# Creates a Kubernetes secret from the cert files
+# The gateways will read this secret to serve HTTPS
+kubectl create secret tls httpbin-tls --cert=certs/tls.crt --key=certs/tls.key
+```
+
+> The `certs/` folder is gitignored — regenerate on each new machine.
+> Run `mkcert -install` first so curl trusts the cert without `-k`.
 
 ---
 
@@ -103,20 +138,32 @@ kubectl rollout status deploy/httpbin            # wait until httpbin pods are r
 ```bash
 helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx && helm repo update   # add NGINX's helm chart repo
 helm install nginx ingress-nginx/ingress-nginx -n ingress-nginx --create-namespace \
-  --set controller.service.type=ClusterIP \          # keep it internal (we reach it via port-forward)
-  --set controller.admissionWebhooks.enabled=false   # skip the webhook (not needed locally, avoids delays)
+  --set controller.service.type=ClusterIP \                           # keep it internal (we reach it via port-forward)
+  --set controller.admissionWebhooks.enabled=false \                  # skip the webhook (not needed locally, avoids delays)
+  --set controller.config.use-forwarded-headers="true" \              # tells NGINX to trust and pass X-Forwarded-For from clients
+  --set controller.config.compute-full-forwarded-for="true"           # appends each hop's IP to X-Forwarded-For chain
 kubectl -n ingress-nginx rollout status deploy/nginx-ingress-nginx-controller --timeout=150s   # wait until ready
 
-sed -i 's/ingressClassName: .*/ingressClassName: nginx/' manifests/ingress.yaml   # tell the route to use NGINX
-kubectl apply -f manifests/ingress.yaml             # create the route (httpbin -> NGINX)
+sed -i 's/ingressClassName: .*/ingressClassName: nginx/' manifests/ingress.yaml       # tell the HTTP route to use NGINX
+sed -i 's/ingressClassName: .*/ingressClassName: nginx/' manifests/ingress-tls.yaml   # tell the HTTPS route to use NGINX
+kubectl apply -f manifests/ingress.yaml             # create the HTTP route (/ -> httpbin)
+kubectl apply -f manifests/ingress-tls.yaml         # create the HTTPS route with TLS termination using httpbin-tls secret
 
-kubectl -n ingress-nginx port-forward svc/nginx-ingress-nginx-controller 8080:80 >/tmp/pf.log 2>&1 &   # tunnel localhost:8080 -> gateway
-PF=$!; sleep 3                                       # save the tunnel's process id, give it a moment
-curl -s localhost:8080/get | head -3                # sanity check: does the route work?
+# Tunnel localhost:8080 -> NGINX HTTP and localhost:8443 -> NGINX HTTPS
+kubectl -n ingress-nginx port-forward svc/nginx-ingress-nginx-controller 8080:80 8443:443 >/tmp/pf.log 2>&1 &
+PF=$!; sleep 3                                      # save tunnel process id, give it a moment
+
+curl -s localhost:8080/get | head -3                # sanity check: does the HTTP route work?
+
+# Verify X-Forwarded headers and TLS cert (checks X-Forwarded-For, X-Forwarded-Proto, X-Forwarded-Host, TLS)
+bash scripts/verify-headers.sh https 8443
+
 k6 run k6-test.js                                   # LOAD TEST -> record req/s, p95, error rate
 kill $PF                                             # close the tunnel
 
-kubectl delete -f manifests/ingress.yaml ; helm uninstall nginx -n ingress-nginx   # clean up before the next gateway
+kubectl delete -f manifests/ingress.yaml
+kubectl delete -f manifests/ingress-tls.yaml
+helm uninstall nginx -n ingress-nginx               # clean up before the next gateway
 ```
 
 ### 2b. Traefik
@@ -125,16 +172,21 @@ helm repo add traefik https://traefik.github.io/charts && helm repo update      
 helm install traefik traefik/traefik -n traefik --create-namespace --set service.type=ClusterIP   # install (internal service)
 kubectl -n traefik rollout status deploy/traefik --timeout=150s                     # wait until ready
 
-sed -i 's/ingressClassName: .*/ingressClassName: traefik/' manifests/ingress.yaml   # route via Traefik
-kubectl apply -f manifests/ingress.yaml                                             # create the route
+sed -i 's/ingressClassName: .*/ingressClassName: traefik/' manifests/ingress.yaml       # route via Traefik
+sed -i 's/ingressClassName: .*/ingressClassName: traefik/' manifests/ingress-tls.yaml   # HTTPS route via Traefik
+kubectl apply -f manifests/ingress.yaml
+kubectl apply -f manifests/ingress-tls.yaml         # Traefik auto-picks up the TLS secret from ingress spec
 
-kubectl -n traefik port-forward svc/traefik 8080:80 >/tmp/pf.log 2>&1 &             # tunnel to the gateway
+kubectl -n traefik port-forward svc/traefik 8080:80 8443:443 >/tmp/pf.log 2>&1 &   # tunnel HTTP + HTTPS
 PF=$!; sleep 3
 curl -s localhost:8080/get | head -3                                                # sanity check
+bash scripts/verify-headers.sh https 8443                                          # verify X-Forwarded headers + TLS
 k6 run k6-test.js                                                                   # load test -> record
 kill $PF                                                                            # close tunnel
 
-kubectl delete -f manifests/ingress.yaml ; helm uninstall traefik -n traefik        # clean up
+kubectl delete -f manifests/ingress.yaml
+kubectl delete -f manifests/ingress-tls.yaml
+helm uninstall traefik -n traefik                                                   # clean up
 ```
 
 ### 2c. HAProxy
@@ -144,34 +196,44 @@ helm install haproxy haproxytech/kubernetes-ingress -n haproxy --create-namespac
   --set controller.service.type=ClusterIP                                           # install (internal service)
 kubectl -n haproxy rollout status deploy/haproxy-kubernetes-ingress --timeout=150s   # wait until ready
 
-sed -i 's/ingressClassName: .*/ingressClassName: haproxy/' manifests/ingress.yaml    # route via HAProxy
-kubectl apply -f manifests/ingress.yaml                                              # create the route
+sed -i 's/ingressClassName: .*/ingressClassName: haproxy/' manifests/ingress.yaml       # route via HAProxy
+sed -i 's/ingressClassName: .*/ingressClassName: haproxy/' manifests/ingress-tls.yaml   # HTTPS route via HAProxy
+kubectl apply -f manifests/ingress.yaml
+kubectl apply -f manifests/ingress-tls.yaml
 
-kubectl -n haproxy port-forward svc/haproxy-kubernetes-ingress 8080:80 >/tmp/pf.log 2>&1 &   # tunnel to the gateway
+kubectl -n haproxy port-forward svc/haproxy-kubernetes-ingress 8080:80 8443:443 >/tmp/pf.log 2>&1 &   # tunnel HTTP + HTTPS
 PF=$!; sleep 3
 curl -s localhost:8080/get | head -3                                                 # sanity check
+bash scripts/verify-headers.sh https 8443                                           # verify X-Forwarded headers + TLS
 k6 run k6-test.js                                                                    # load test -> record
 kill $PF                                                                             # close tunnel
 
-kubectl delete -f manifests/ingress.yaml ; helm uninstall haproxy -n haproxy         # clean up
+kubectl delete -f manifests/ingress.yaml
+kubectl delete -f manifests/ingress-tls.yaml
+helm uninstall haproxy -n haproxy                                                    # clean up
 ```
 
 ### 2d. Kong
 ```bash
 helm repo add kong https://charts.konghq.com && helm repo update                     # add Kong's chart repo
 helm install kong kong/kong -n kong --create-namespace --set proxy.type=ClusterIP    # install (internal proxy service)
-kubectl -n kong rollout status deploy/kong-kong --timeout=180s                       # wait until ready
+kubectl -n kong rollout status deploy/kong-kong --timeout=180s                       # wait until ready (Kong takes longer)
 
-sed -i 's/ingressClassName: .*/ingressClassName: kong/' manifests/ingress.yaml        # route via Kong
-kubectl apply -f manifests/ingress.yaml                                              # create the route
+sed -i 's/ingressClassName: .*/ingressClassName: kong/' manifests/ingress.yaml       # route via Kong
+sed -i 's/ingressClassName: .*/ingressClassName: kong/' manifests/ingress-tls.yaml   # HTTPS route via Kong
+kubectl apply -f manifests/ingress.yaml
+kubectl apply -f manifests/ingress-tls.yaml
 
-kubectl -n kong port-forward svc/kong-kong-proxy 8080:80 >/tmp/pf.log 2>&1 &          # tunnel to the gateway
+kubectl -n kong port-forward svc/kong-kong-proxy 8080:80 8443:443 >/tmp/pf.log 2>&1 &   # tunnel HTTP + HTTPS
 PF=$!; sleep 3
 curl -s localhost:8080/get | head -3                                                 # sanity check
+bash scripts/verify-headers.sh https 8443                                           # verify X-Forwarded headers + TLS
 k6 run k6-test.js                                                                    # load test -> record
 kill $PF                                                                             # close tunnel
 
-kubectl delete -f manifests/ingress.yaml ; helm uninstall kong -n kong               # clean up
+kubectl delete -f manifests/ingress.yaml
+kubectl delete -f manifests/ingress-tls.yaml
+helm uninstall kong -n kong                                                          # clean up
 ```
 
 ### 2e. Envoy Gateway (uses the Gateway API, not Ingress)
