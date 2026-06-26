@@ -8,7 +8,7 @@ kind: Ingress
 metadata:
   name: httpbin
 spec:
-  ingressClassName: kong
+  ingressClassName: traefik
   rules:
     - http:
         paths:

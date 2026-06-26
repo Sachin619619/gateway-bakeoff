@@ -44,7 +44,8 @@ built-in WAF path win — NGINX is the lowest-risk, K8s-native default.
 ## 0. Prerequisites
 
 ```bash
-brew install kind kubectl helm k6
+brew install kind kubectl helm k6 mkcert nss
+mkcert -install   # installs local CA into system trust store (requires sudo/password once)
 # Docker Desktop (or Colima) must be running — kind needs a container runtime.
 ```
 
@@ -68,6 +69,17 @@ kubectl rollout status deploy/httpbin
 (`kind-config.yaml` is included if you ever want a multi-node cluster — pass
 `--config kind-config.yaml` — but single-node is recommended here.)
 
+### 1a. Generate TLS certificate (for HTTPS tests)
+
+```bash
+mkdir -p certs
+mkcert -cert-file certs/tls.crt -key-file certs/tls.key localhost 127.0.0.1
+kubectl create secret tls httpbin-tls --cert=certs/tls.crt --key=certs/tls.key
+```
+
+> The `certs/` folder is gitignored. You must regenerate the cert on each new laptop.
+> Run `mkcert -install` first so your browser/curl trusts the cert without `-k`.
+
 ---
 
 ## 2. Test each gateway (one at a time)
@@ -84,16 +96,25 @@ below are the exact ones verified working on macOS + kind.
 ```bash
 helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx && helm repo update
 helm install nginx ingress-nginx/ingress-nginx -n ingress-nginx --create-namespace \
-  --set controller.service.type=ClusterIP --set controller.admissionWebhooks.enabled=false
+  --set controller.service.type=ClusterIP \
+  --set controller.admissionWebhooks.enabled=false \
+  --set controller.config.use-forwarded-headers="true" \
+  --set controller.config.compute-full-forwarded-for="true"
 kubectl -n ingress-nginx rollout status deploy/nginx-ingress-nginx-controller --timeout=150s
 
 sed -i '' 's/ingressClassName: .*/ingressClassName: nginx/' manifests/ingress.yaml
+sed -i '' 's/ingressClassName: .*/ingressClassName: nginx/' manifests/ingress-tls.yaml
 kubectl apply -f manifests/ingress.yaml
+kubectl apply -f manifests/ingress-tls.yaml
 
-kubectl -n ingress-nginx port-forward svc/nginx-ingress-nginx-controller 8080:80
-# new terminal -> hit it:  curl -s localhost:8080/get   then:  k6 run k6-test.js
+# HTTP + HTTPS port-forward
+kubectl -n ingress-nginx port-forward svc/nginx-ingress-nginx-controller 8080:80 8443:443 &
+# Verify headers:       bash scripts/verify-headers.sh https 8443
+# Load test (HTTP):     k6 run k6-test.js
 # record results, Ctrl-C the port-forward, then clean up:
-kubectl delete -f manifests/ingress.yaml ; helm uninstall nginx -n ingress-nginx
+kubectl delete -f manifests/ingress.yaml
+kubectl delete -f manifests/ingress-tls.yaml
+helm uninstall nginx -n ingress-nginx
 ```
 
 ### 2b. Traefik
@@ -103,11 +124,17 @@ helm install traefik traefik/traefik -n traefik --create-namespace --set service
 kubectl -n traefik rollout status deploy/traefik --timeout=150s
 
 sed -i '' 's/ingressClassName: .*/ingressClassName: traefik/' manifests/ingress.yaml
+sed -i '' 's/ingressClassName: .*/ingressClassName: traefik/' manifests/ingress-tls.yaml
 kubectl apply -f manifests/ingress.yaml
+kubectl apply -f manifests/ingress-tls.yaml
 
-kubectl -n traefik port-forward svc/traefik 8080:80
-# new terminal:  curl -s localhost:8080/get ;  k6 run k6-test.js
-kubectl delete -f manifests/ingress.yaml ; helm uninstall traefik -n traefik
+# HTTP + HTTPS port-forward (Traefik web=8000, websecure=8443)
+kubectl -n traefik port-forward svc/traefik 8080:80 8443:443 &
+# Verify headers:       bash scripts/verify-headers.sh https 8443
+# Load test (HTTP):     k6 run k6-test.js
+kubectl delete -f manifests/ingress.yaml
+kubectl delete -f manifests/ingress-tls.yaml
+helm uninstall traefik -n traefik
 ```
 
 ### 2c. HAProxy
@@ -118,11 +145,16 @@ helm install haproxy haproxytech/kubernetes-ingress -n haproxy --create-namespac
 kubectl -n haproxy rollout status deploy/haproxy-kubernetes-ingress --timeout=150s
 
 sed -i '' 's/ingressClassName: .*/ingressClassName: haproxy/' manifests/ingress.yaml
+sed -i '' 's/ingressClassName: .*/ingressClassName: haproxy/' manifests/ingress-tls.yaml
 kubectl apply -f manifests/ingress.yaml
+kubectl apply -f manifests/ingress-tls.yaml
 
-kubectl -n haproxy port-forward svc/haproxy-kubernetes-ingress 8080:80
-# new terminal:  curl -s localhost:8080/get ;  k6 run k6-test.js
-kubectl delete -f manifests/ingress.yaml ; helm uninstall haproxy -n haproxy
+kubectl -n haproxy port-forward svc/haproxy-kubernetes-ingress 8080:80 8443:443 &
+# Verify headers:       bash scripts/verify-headers.sh https 8443
+# Load test (HTTP):     k6 run k6-test.js
+kubectl delete -f manifests/ingress.yaml
+kubectl delete -f manifests/ingress-tls.yaml
+helm uninstall haproxy -n haproxy
 ```
 
 ### 2d. Kong
@@ -132,11 +164,16 @@ helm install kong kong/kong -n kong --create-namespace --set proxy.type=ClusterI
 kubectl -n kong rollout status deploy/kong-kong --timeout=180s
 
 sed -i '' 's/ingressClassName: .*/ingressClassName: kong/' manifests/ingress.yaml
+sed -i '' 's/ingressClassName: .*/ingressClassName: kong/' manifests/ingress-tls.yaml
 kubectl apply -f manifests/ingress.yaml
+kubectl apply -f manifests/ingress-tls.yaml
 
-kubectl -n kong port-forward svc/kong-kong-proxy 8080:80
-# new terminal:  curl -s localhost:8080/get ;  k6 run k6-test.js
-kubectl delete -f manifests/ingress.yaml ; helm uninstall kong -n kong
+kubectl -n kong port-forward svc/kong-kong-proxy 8080:80 8443:443 &
+# Verify headers:       bash scripts/verify-headers.sh https 8443
+# Load test (HTTP):     k6 run k6-test.js
+kubectl delete -f manifests/ingress.yaml
+kubectl delete -f manifests/ingress-tls.yaml
+helm uninstall kong -n kong
 ```
 
 ### 2e. Envoy Gateway (uses Gateway API, not Ingress)
@@ -155,7 +192,26 @@ kubectl delete -f manifests/envoy-gateway.yaml ; helm uninstall eg -n envoy-gate
 
 ---
 
-## 3. Load test
+## 3. Verify X-Forwarded headers + HTTPS
+
+With a gateway port-forwarded to `localhost:8080` (HTTP) and `localhost:8443` (HTTPS):
+
+```bash
+# Test X-Forwarded headers + TLS in one shot
+bash scripts/verify-headers.sh https 8443
+```
+
+This checks:
+- `X-Forwarded-For` — client IP reaches the backend (with gateway IP appended)
+- `X-Forwarded-Proto` — backend sees `https` when TLS is terminated at gateway
+- `X-Forwarded-Host` — original `Host` header is preserved
+- TLS cert info — which cert the gateway is serving
+
+See **[OBSERVATIONS.md](OBSERVATIONS.md)** for measured results per gateway.
+
+---
+
+## 4. Load test
 
 With a gateway port-forwarded to `localhost:8080`:
 

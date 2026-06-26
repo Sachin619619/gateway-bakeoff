@@ -1,0 +1,35 @@
+# TLS Ingress — used by NGINX, Traefik, HAProxy, Kong
+# Before applying, set ingressClassName to: nginx | traefik | haproxy | kong
+# Requires a TLS secret named "httpbin-tls" in default namespace:
+#   kubectl create secret tls httpbin-tls --cert=certs/tls.crt --key=certs/tls.key
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: httpbin-tls
+  annotations:
+    # NGINX: force HTTP -> HTTPS redirect
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    # NGINX: pass real client IP
+    nginx.ingress.kubernetes.io/use-forwarded-headers: "true"
+    nginx.ingress.kubernetes.io/compute-full-forwarded-for: "true"
+    # Traefik: force HTTPS redirect
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    # HAProxy: pass client IP
+    haproxy.router.openshift.io/timeout: "30s"
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts:
+        - localhost
+      secretName: httpbin-tls
+  rules:
+    - host: localhost
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: httpbin
+                port:
+                  number: 80
