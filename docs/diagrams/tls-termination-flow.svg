@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="460" viewBox="0 0 760 460">
+  <defs>
+    <marker id="arr" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto" markerUnits="userSpaceOnUse">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#6B7280"/>
+    </marker>
+    <marker id="arr-o" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto" markerUnits="userSpaceOnUse">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#D97706"/>
+    </marker>
+  </defs>
+  <rect width="760" height="460" fill="white"/>
+  <!-- Title -->
+  <text x="380" y="34" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" font-size="18" font-weight="bold" fill="#111827">TLS Termination — HTTPS at the Gateway</text>
+  <!-- TLS Secret annotation (orange dashed) -->
+  <rect x="200" y="60" width="220" height="52" rx="8" fill="#FEF3C7" stroke="#D97706" stroke-width="1.5" stroke-dasharray="6 4"/>
+  <text x="310" y="82" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" font-size="12" font-weight="bold" fill="#92400E">httpbin-tls secret</text>
+  <text x="310" y="100" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" font-size="10" fill="#92400E">mkcert cert (localhost · 127.0.0.1)</text>
+  <!-- Client (gray) -->
+  <rect x="20" y="226" width="150" height="66" rx="9" fill="#F3F4F6" stroke="#9CA3AF" stroke-width="1.5"/>
+  <text x="95" y="255" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" font-size="13" font-weight="bold" fill="#374151">Client</text>
+  <text x="95" y="273" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" font-size="10" fill="#374151">curl · browser</text>
+  <!-- Ingress Controller (blue) -->
+  <rect x="200" y="226" width="220" height="66" rx="9" fill="#DBEAFE" stroke="#2563EB" stroke-width="1.5"/>
+  <text x="310" y="255" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" font-size="13" font-weight="bold" fill="#1E3A8A">Ingress Controller</text>
+  <text x="310" y="273" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" font-size="10" fill="#1E3A8A">terminates TLS, reads secret</text>
+  <!-- Service (teal) -->
+  <rect x="456" y="226" width="140" height="66" rx="9" fill="#CCFBF1" stroke="#0D9488" stroke-width="1.5"/>
+  <text x="526" y="255" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" font-size="13" font-weight="bold" fill="#115E59">Service</text>
+  <text x="526" y="273" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" font-size="10" fill="#115E59">httpbin  :80</text>
+  <!-- Pod (teal) -->
+  <rect x="630" y="226" width="110" height="66" rx="9" fill="#CCFBF1" stroke="#0D9488" stroke-width="1.5"/>
+  <text x="685" y="255" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" font-size="13" font-weight="bold" fill="#115E59">Pod</text>
+  <text x="685" y="273" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" font-size="10" fill="#115E59">httpbin  :8080</text>
+  <!-- Redirect note (gray dashed) -->
+  <rect x="20" y="348" width="390" height="34" rx="6" fill="#F3F4F6" stroke="#9CA3AF" stroke-width="1" stroke-dasharray="5 4"/>
+  <text x="215" y="369" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" font-size="10" fill="#374151">HTTP :8080  →  308 Permanent Redirect  →  HTTPS :8443</text>
+  <!-- Dashed arrow: TLS secret → gateway (vertical) -->
+  <line x1="310" y1="112" x2="310" y2="226" stroke="#D97706" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#arr-o)"/>
+  <!-- Arrow: client → gateway, label above -->
+  <line x1="170" y1="259" x2="200" y2="259" stroke="#6B7280" stroke-width="2" marker-end="url(#arr)"/>
+  <text x="185" y="250" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" font-size="8" fill="#6B7280">HTTPS :8443</text>
+  <text x="185" y="260" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" font-size="8" fill="#6B7280">(encrypted)</text>
+  <!-- Arrow: gateway → service, label above -->
+  <line x1="420" y1="259" x2="456" y2="259" stroke="#6B7280" stroke-width="2" marker-end="url(#arr)"/>
+  <text x="438" y="250" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" font-size="8" fill="#6B7280">plain HTTP</text>
+  <text x="438" y="261" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" font-size="8" fill="#6B7280">(decrypted)</text>
+  <!-- Arrow: service → pod -->
+  <line x1="596" y1="259" x2="630" y2="259" stroke="#6B7280" stroke-width="2" marker-end="url(#arr)"/>
+  <!-- Legend -->
+  <line x1="20" y1="402" x2="50" y2="402" stroke="#6B7280" stroke-width="2"/>
+  <text x="58" y="406" font-family="Helvetica,Arial,sans-serif" font-size="11" fill="#6B7280">Solid → request path (HTTPS in, plain HTTP out)</text>
+  <line x1="20" y1="426" x2="50" y2="426" stroke="#D97706" stroke-width="1.5" stroke-dasharray="6 4"/>
+  <text x="58" y="430" font-family="Helvetica,Arial,sans-serif" font-size="11" fill="#6B7280">Dashed → TLS secret read by gateway + HTTP redirect note</text>
+</svg>

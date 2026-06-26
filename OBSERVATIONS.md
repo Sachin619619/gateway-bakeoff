@@ -9,14 +9,23 @@ Test tool: `scripts/verify-headers.sh`
 
 ## Diagrams
 
-| Diagram | File |
-|---------|------|
-| X-Forwarded headers injection flow | [docs/diagrams/x-forwarded-headers-flow.drawio](docs/diagrams/x-forwarded-headers-flow.drawio) |
-| TLS termination (HTTPS → gateway → HTTP) | [docs/diagrams/tls-termination-flow.drawio](docs/diagrams/tls-termination-flow.drawio) |
-| All-gateways request flow | [docs/diagrams/gateways-flow.drawio](docs/diagrams/gateways-flow.drawio) |
-| Ingress rule → controller flow | [docs/diagrams/ingress-flow.drawio](docs/diagrams/ingress-flow.drawio) |
+### X-Forwarded Headers — Gateway Injection
 
-> Open `.drawio` files in [draw.io Desktop](https://github.com/jgraph/drawio-desktop/releases) or [app.diagrams.net](https://app.diagrams.net) to view/edit.
+![X-Forwarded Headers Flow](docs/diagrams/x-forwarded-headers-flow.png)
+
+### TLS Termination — HTTPS at the Gateway
+
+![TLS Termination Flow](docs/diagrams/tls-termination-flow.png)
+
+### All Gateways — Request Flow
+
+![Gateways Flow](docs/diagrams/gateways-flow.png)
+
+### Ingress Rule → Controller Flow
+
+![Ingress Flow](docs/diagrams/ingress-flow.png)
+
+> Source files (editable): `.drawio` files in `docs/diagrams/` — open in [draw.io Desktop](https://github.com/jgraph/drawio-desktop/releases) or [app.diagrams.net](https://app.diagrams.net).
 
 ---
 

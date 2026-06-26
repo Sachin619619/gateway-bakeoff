@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="440" viewBox="0 0 760 440">
+  <defs>
+    <marker id="arr" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto" markerUnits="userSpaceOnUse">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#6B7280"/>
+    </marker>
+    <marker id="arr-o" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto" markerUnits="userSpaceOnUse">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#D97706"/>
+    </marker>
+  </defs>
+  <rect width="760" height="440" fill="white"/>
+  <!-- Title -->
+  <text x="380" y="34" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" font-size="18" font-weight="bold" fill="#111827">X-Forwarded Headers — Gateway Injection</text>
+  <!-- Headers annotation (orange dashed) -->
+  <rect x="200" y="58" width="220" height="78" rx="8" fill="#FEF3C7" stroke="#D97706" stroke-width="1.5" stroke-dasharray="6 4"/>
+  <text x="310" y="78" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" font-size="12" font-weight="bold" fill="#92400E">Injected by gateway</text>
+  <text x="310" y="96" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" font-size="10" fill="#92400E">X-Forwarded-For: 203.0.113.99, 127.0.0.1</text>
+  <text x="310" y="111" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" font-size="10" fill="#92400E">X-Forwarded-Proto: https</text>
+  <text x="310" y="126" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" font-size="10" fill="#92400E">X-Forwarded-Host: localhost</text>
+  <!-- Client (gray) -->
+  <rect x="20" y="220" width="150" height="66" rx="9" fill="#F3F4F6" stroke="#9CA3AF" stroke-width="1.5"/>
+  <text x="95" y="249" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" font-size="13" font-weight="bold" fill="#374151">Client</text>
+  <text x="95" y="267" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" font-size="10" fill="#374151">k6 · curl  :8080</text>
+  <!-- Ingress Controller (blue) -->
+  <rect x="200" y="220" width="220" height="66" rx="9" fill="#DBEAFE" stroke="#2563EB" stroke-width="1.5"/>
+  <text x="310" y="249" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" font-size="13" font-weight="bold" fill="#1E3A8A">Ingress Controller</text>
+  <text x="310" y="267" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" font-size="10" fill="#1E3A8A">NGINX · Traefik · HAProxy …</text>
+  <!-- Service (teal) -->
+  <rect x="456" y="220" width="140" height="66" rx="9" fill="#CCFBF1" stroke="#0D9488" stroke-width="1.5"/>
+  <text x="526" y="249" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" font-size="13" font-weight="bold" fill="#115E59">Service</text>
+  <text x="526" y="267" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" font-size="10" fill="#115E59">httpbin  :80</text>
+  <!-- Pod (teal) -->
+  <rect x="630" y="220" width="110" height="66" rx="9" fill="#CCFBF1" stroke="#0D9488" stroke-width="1.5"/>
+  <text x="685" y="249" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" font-size="13" font-weight="bold" fill="#115E59">Pod</text>
+  <text x="685" y="267" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" font-size="10" fill="#115E59">httpbin  :8080</text>
+  <!-- Dashed arrow: annotation → gateway (vertical) -->
+  <line x1="310" y1="136" x2="310" y2="220" stroke="#D97706" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#arr-o)"/>
+  <!-- Arrow: client → gateway -->
+  <line x1="170" y1="253" x2="200" y2="253" stroke="#6B7280" stroke-width="2" marker-end="url(#arr)"/>
+  <!-- Arrow: gateway → service, label above -->
+  <line x1="420" y1="253" x2="456" y2="253" stroke="#6B7280" stroke-width="2" marker-end="url(#arr)"/>
+  <text x="438" y="244" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" font-size="9" fill="#6B7280">headers</text>
+  <text x="438" y="256" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" font-size="9" fill="#6B7280">forwarded</text>
+  <!-- Arrow: service → pod -->
+  <line x1="596" y1="253" x2="630" y2="253" stroke="#6B7280" stroke-width="2" marker-end="url(#arr)"/>
+  <!-- Legend -->
+  <line x1="20" y1="368" x2="50" y2="368" stroke="#6B7280" stroke-width="2"/>
+  <text x="58" y="372" font-family="Helvetica,Arial,sans-serif" font-size="11" fill="#6B7280">Solid → request path through the cluster</text>
+  <line x1="20" y1="392" x2="50" y2="392" stroke="#D97706" stroke-width="1.5" stroke-dasharray="6 4"/>
+  <text x="58" y="396" font-family="Helvetica,Arial,sans-serif" font-size="11" fill="#6B7280">Dashed → headers injected by gateway before forwarding to backend</text>
+</svg>
