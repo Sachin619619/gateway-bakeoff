@@ -43,10 +43,24 @@ built-in WAF path win — NGINX is the lowest-risk, K8s-native default.
 
 ## 0. Prerequisites
 
+Install all required tools (macOS):
+
 ```bash
+# kind    — creates a local Kubernetes cluster inside Docker
+# kubectl — CLI to talk to the Kubernetes cluster
+# helm    — package manager to install gateways (NGINX, Traefik, etc.)
+# k6      — load testing tool
+# mkcert  — generates locally-trusted TLS certificates (no browser warning)
+# nss     — required by mkcert to trust certs in Firefox
 brew install kind kubectl helm k6 mkcert nss
-mkcert -install   # installs local CA into system trust store (requires sudo/password once)
-# Docker Desktop (or Colima) must be running — kind needs a container runtime.
+
+# Installs mkcert's local CA into your system trust store
+# so curl/browser trusts the generated certs without the -k flag
+# Note: this requires your laptop password (sudo) once
+mkcert -install
+
+# Make sure Docker Desktop is running before proceeding
+# kind needs Docker to create the cluster nodes as containers
 ```
 
 > **On Ubuntu/Linux?** See **[RUN_UBUNTU.md](RUN_UBUNTU.md)** for the full
@@ -56,191 +70,273 @@ mkcert -install   # installs local CA into system trust store (requires sudo/pas
 
 ## 1. Create the local cluster + deploy the sample app (once)
 
-A single-node cluster is plenty for this and is the most reliable:
-
 ```bash
+# Clone the repo first (on a new laptop)
+git clone https://github.com/Sachin619619/gateway-bakeoff.git
 cd gateway-bakeoff
-kind create cluster --name bakeoff --wait 120s   # kind sets kubectl context "kind-bakeoff"
+
+# Creates a single-node Kubernetes cluster named "bakeoff" inside Docker
+# Also sets kubectl context to "kind-bakeoff" automatically
+kind create cluster --name bakeoff --wait 120s
+
+# Deploys httpbin — the shared backend app all gateways will proxy to
+# httpbin echoes back request headers, which lets us verify X-Forwarded headers
 kubectl apply -f manifests/httpbin.yaml
+
+# Waits until both httpbin pods are up and ready before proceeding
 kubectl rollout status deploy/httpbin
 ```
-
-`httpbin` is the shared backend for every gateway, so comparisons are fair.
-(`kind-config.yaml` is included if you ever want a multi-node cluster — pass
-`--config kind-config.yaml` — but single-node is recommended here.)
 
 ### 1a. Generate TLS certificate (for HTTPS tests)
 
 ```bash
+# Creates the certs/ folder to store the certificate files
 mkdir -p certs
+
+# Generates a TLS certificate valid for localhost and 127.0.0.1
+# tls.crt = the public certificate, tls.key = the private key
 mkcert -cert-file certs/tls.crt -key-file certs/tls.key localhost 127.0.0.1
+
+# Creates a Kubernetes secret from the cert files
+# The gateways will read this secret to serve HTTPS
 kubectl create secret tls httpbin-tls --cert=certs/tls.crt --key=certs/tls.key
 ```
 
-> The `certs/` folder is gitignored. You must regenerate the cert on each new laptop.
-> Run `mkcert -install` first so your browser/curl trusts the cert without `-k`.
+> The `certs/` folder is gitignored — you must run the above on each new laptop.
+> Run `mkcert -install` first so curl trusts the cert without the `-k` flag.
 
 ---
 
 ## 2. Test each gateway (one at a time)
 
-For each gateway: **install → route → port-forward → load test → record → uninstall.**
-Doing one at a time avoids port clashes and keeps measurements clean. Commands
-below are the exact ones verified working on macOS + kind.
+**Rule:** install one gateway → apply route → port-forward → verify headers → load test → uninstall.
+One at a time avoids port conflicts and keeps measurements fair.
 
-> The `sed -i ''` line is macOS syntax (Linux: use `sed -i`). It just sets the
-> `ingressClassName` in `manifests/ingress.yaml` for the gateway under test.
-> Tip: if a port-forward target isn't found, run `kubectl get svc -A`.
+> **macOS note:** `sed -i ''` is macOS syntax. On Linux use `sed -i` (no quotes).
+> If a port-forward target is not found, run `kubectl get svc -A` to check service names.
+
+---
 
 ### 2a. NGINX Ingress
+
 ```bash
+# Add the NGINX Ingress Helm chart repository and refresh the local cache
 helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx && helm repo update
+
+# Install NGINX Ingress controller in its own namespace
+# --set controller.service.type=ClusterIP         → no external LoadBalancer needed (we use port-forward)
+# --set controller.admissionWebhooks.enabled=false → skips webhook setup (not needed for local testing)
+# --set controller.config.use-forwarded-headers    → tells NGINX to trust and pass X-Forwarded-For from clients
+# --set controller.config.compute-full-forwarded-for → appends each hop's IP to X-Forwarded-For chain
 helm install nginx ingress-nginx/ingress-nginx -n ingress-nginx --create-namespace \
   --set controller.service.type=ClusterIP \
   --set controller.admissionWebhooks.enabled=false \
   --set controller.config.use-forwarded-headers="true" \
   --set controller.config.compute-full-forwarded-for="true"
+
+# Waits until the NGINX controller pod is fully running before we route traffic
 kubectl -n ingress-nginx rollout status deploy/nginx-ingress-nginx-controller --timeout=150s
 
+# Updates the ingress manifest to use NGINX as the ingress class
 sed -i '' 's/ingressClassName: .*/ingressClassName: nginx/' manifests/ingress.yaml
 sed -i '' 's/ingressClassName: .*/ingressClassName: nginx/' manifests/ingress-tls.yaml
+
+# Applies the HTTP ingress route — tells NGINX to forward / → httpbin service
 kubectl apply -f manifests/ingress.yaml
+
+# Applies the HTTPS ingress route — tells NGINX to terminate TLS using the httpbin-tls secret
 kubectl apply -f manifests/ingress-tls.yaml
 
-# HTTP + HTTPS port-forward
+# Forwards localhost:8080 → NGINX HTTP port (80) and localhost:8443 → NGINX HTTPS port (443)
+# Run this in a terminal and keep it running while you test
 kubectl -n ingress-nginx port-forward svc/nginx-ingress-nginx-controller 8080:80 8443:443 &
-# Verify headers:       bash scripts/verify-headers.sh https 8443
-# Load test (HTTP):     k6 run k6-test.js
-# record results, Ctrl-C the port-forward, then clean up:
+
+# Sanity check — should return JSON with request details from httpbin
+curl -s http://localhost:8080/get | head
+
+# Verify X-Forwarded headers and TLS (see Step 3 below)
+bash scripts/verify-headers.sh https 8443
+
+# Run the load test (see Step 4 below)
+k6 run k6-test.js
+
+# --- Cleanup: stop port-forward, remove routes, uninstall NGINX ---
+# Press Ctrl+C in the port-forward terminal, then:
 kubectl delete -f manifests/ingress.yaml
 kubectl delete -f manifests/ingress-tls.yaml
 helm uninstall nginx -n ingress-nginx
 ```
 
+---
+
 ### 2b. Traefik
+
 ```bash
+# Add the Traefik Helm chart repository and refresh the local cache
 helm repo add traefik https://traefik.github.io/charts && helm repo update
+
+# Install Traefik in its own namespace
+# --set service.type=ClusterIP → no external LoadBalancer, we use port-forward
 helm install traefik traefik/traefik -n traefik --create-namespace --set service.type=ClusterIP
+
+# Waits until Traefik pod is fully running
 kubectl -n traefik rollout status deploy/traefik --timeout=150s
 
+# Updates ingress manifests to use Traefik as the ingress class
 sed -i '' 's/ingressClassName: .*/ingressClassName: traefik/' manifests/ingress.yaml
 sed -i '' 's/ingressClassName: .*/ingressClassName: traefik/' manifests/ingress-tls.yaml
+
 kubectl apply -f manifests/ingress.yaml
 kubectl apply -f manifests/ingress-tls.yaml
 
-# HTTP + HTTPS port-forward (Traefik web=8000, websecure=8443)
+# Forwards localhost:8080 → Traefik HTTP and localhost:8443 → Traefik HTTPS
 kubectl -n traefik port-forward svc/traefik 8080:80 8443:443 &
-# Verify headers:       bash scripts/verify-headers.sh https 8443
-# Load test (HTTP):     k6 run k6-test.js
+
+bash scripts/verify-headers.sh https 8443
+k6 run k6-test.js
+
 kubectl delete -f manifests/ingress.yaml
 kubectl delete -f manifests/ingress-tls.yaml
 helm uninstall traefik -n traefik
 ```
 
+---
+
 ### 2c. HAProxy
+
 ```bash
+# Add the HAProxy Tech Helm chart repository
 helm repo add haproxytech https://haproxytech.github.io/helm-charts && helm repo update
+
 helm install haproxy haproxytech/kubernetes-ingress -n haproxy --create-namespace \
   --set controller.service.type=ClusterIP
+
 kubectl -n haproxy rollout status deploy/haproxy-kubernetes-ingress --timeout=150s
 
 sed -i '' 's/ingressClassName: .*/ingressClassName: haproxy/' manifests/ingress.yaml
 sed -i '' 's/ingressClassName: .*/ingressClassName: haproxy/' manifests/ingress-tls.yaml
+
 kubectl apply -f manifests/ingress.yaml
 kubectl apply -f manifests/ingress-tls.yaml
 
 kubectl -n haproxy port-forward svc/haproxy-kubernetes-ingress 8080:80 8443:443 &
-# Verify headers:       bash scripts/verify-headers.sh https 8443
-# Load test (HTTP):     k6 run k6-test.js
+
+bash scripts/verify-headers.sh https 8443
+k6 run k6-test.js
+
 kubectl delete -f manifests/ingress.yaml
 kubectl delete -f manifests/ingress-tls.yaml
 helm uninstall haproxy -n haproxy
 ```
 
+---
+
 ### 2d. Kong
+
 ```bash
+# Add the Kong Helm chart repository
 helm repo add kong https://charts.konghq.com && helm repo update
+
 helm install kong kong/kong -n kong --create-namespace --set proxy.type=ClusterIP
+
+# Kong takes a bit longer to start — 180s timeout
 kubectl -n kong rollout status deploy/kong-kong --timeout=180s
 
 sed -i '' 's/ingressClassName: .*/ingressClassName: kong/' manifests/ingress.yaml
 sed -i '' 's/ingressClassName: .*/ingressClassName: kong/' manifests/ingress-tls.yaml
+
 kubectl apply -f manifests/ingress.yaml
 kubectl apply -f manifests/ingress-tls.yaml
 
+# Kong proxy service name is kong-kong-proxy
 kubectl -n kong port-forward svc/kong-kong-proxy 8080:80 8443:443 &
-# Verify headers:       bash scripts/verify-headers.sh https 8443
-# Load test (HTTP):     k6 run k6-test.js
+
+bash scripts/verify-headers.sh https 8443
+k6 run k6-test.js
+
 kubectl delete -f manifests/ingress.yaml
 kubectl delete -f manifests/ingress-tls.yaml
 helm uninstall kong -n kong
 ```
 
-### 2e. Envoy Gateway (uses Gateway API, not Ingress)
+---
+
+### 2e. Envoy Gateway
+
 ```bash
+# Envoy uses the newer Gateway API (not the classic Ingress API)
+# so it uses envoy-gateway.yaml instead of ingress.yaml
 helm install eg oci://docker.io/envoyproxy/gateway-helm \
   -n envoy-gateway-system --create-namespace
+
 kubectl -n envoy-gateway-system rollout status deploy/envoy-gateway --timeout=180s
 
+# Apply Envoy-specific Gateway API route (GatewayClass + Gateway + HTTPRoute)
 kubectl apply -f manifests/envoy-gateway.yaml
-# Envoy creates a proxy service named envoy-default-eg-<hash>; grab its real name:
+
+# Envoy creates a dynamically named proxy service — find its exact name first
 SVC=$(kubectl -n envoy-gateway-system get svc -o name | grep envoy-default-eg)
-kubectl -n envoy-gateway-system port-forward "$SVC" 8080:80
-# new terminal:  curl -s localhost:8080/get ;  k6 run k6-test.js
-kubectl delete -f manifests/envoy-gateway.yaml ; helm uninstall eg -n envoy-gateway-system
+
+# Forward that service to localhost:8080
+kubectl -n envoy-gateway-system port-forward "$SVC" 8080:80 &
+
+bash scripts/verify-headers.sh http 8080
+k6 run k6-test.js
+
+kubectl delete -f manifests/envoy-gateway.yaml
+helm uninstall eg -n envoy-gateway-system
 ```
 
 ---
 
 ## 3. Verify X-Forwarded headers + HTTPS
 
-With a gateway port-forwarded to `localhost:8080` (HTTP) and `localhost:8443` (HTTPS):
+With a gateway port-forwarded (HTTP on 8080, HTTPS on 8443), run:
 
 ```bash
-# Test X-Forwarded headers + TLS in one shot
+# Runs 4 checks in one shot:
+# 1. Sends X-Forwarded-For: 203.0.113.99 and checks if backend received it
+# 2. Checks if backend received X-Forwarded-Proto: https (set by gateway on TLS termination)
+# 3. Checks if backend received X-Forwarded-Host (original Host header preserved)
+# 4. Checks TLS — connects on 8443 and shows which cert the gateway is serving
 bash scripts/verify-headers.sh https 8443
+
+# For HTTP-only gateways (e.g. Envoy in this setup):
+bash scripts/verify-headers.sh http 8080
 ```
 
-This checks:
-- `X-Forwarded-For` — client IP reaches the backend (with gateway IP appended)
-- `X-Forwarded-Proto` — backend sees `https` when TLS is terminated at gateway
-- `X-Forwarded-Host` — original `Host` header is preserved
-- TLS cert info — which cert the gateway is serving
-
-See **[OBSERVATIONS.md](OBSERVATIONS.md)** for measured results per gateway.
+See **[OBSERVATIONS.md](OBSERVATIONS.md)** for the actual measured results per gateway.
 
 ---
 
 ## 4. Load test
 
-With a gateway port-forwarded to `localhost:8080`:
-
 ```bash
-curl -s localhost:8080/get | head   # sanity check the route first
+# Quick sanity check first — should return JSON from httpbin
+curl -s localhost:8080/get | head
+
+# Runs the k6 load test: ramps to 50 concurrent users over 20s,
+# holds for 1 minute, then ramps down. Total ~90s.
+# Thresholds: p95 latency < 500ms, error rate < 1%
 k6 run k6-test.js
 ```
 
-From the k6 summary, copy into `scorecard.md`:
-- **http_reqs** rate → Req/s
-- **http_req_duration** `p(95)` (and `med` for p50)
-- **http_req_failed** rate → Error rate
+From the k6 summary, record into `scorecard.md`:
+- `http_reqs` rate → **Req/s**
+- `http_req_duration` p(95) and median → **p95 / p50 latency**
+- `http_req_failed` rate → **Error rate**
 
 ---
 
-## 5. Optional feature checks (quick, manual)
+## 5. Optional feature checks
 
-Exercise the rows beyond raw routing:
+```bash
+# Rate limiting — send 50 requests rapidly, watch for 429 Too Many Requests
+for i in $(seq 1 50); do curl -s -o /dev/null -w "%{http_code}\n" localhost:8080/get; done
 
-- **Rate limiting** — enable it, then
-  `for i in $(seq 1 50); do curl -s -o /dev/null -w "%{http_code}\n" localhost:8080/get; done`
-  and watch for `429`s.
-- **WAF** (NGINX + ModSecurity) — send an obvious attack, expect a block:
-  `curl -s -o /dev/null -w "%{http_code}\n" "localhost:8080/get?x=<script>alert(1)</script>"`
-- **TLS termination** — add a self-signed cert (`mkcert`) and hit `https://`.
-- **Auth** — turn on basic/key auth, confirm `401` without credentials.
-
-> Auto-SSL via Let's Encrypt won't work locally (needs a public domain). Use
-> `mkcert`/self-signed for local HTTPS — that table row is moot here.
+# WAF check (NGINX + ModSecurity) — send a XSS attack string, expect 403 blocked
+curl -s -o /dev/null -w "%{http_code}\n" "localhost:8080/get?x=<script>alert(1)</script>"
+```
 
 ---
 
@@ -255,17 +351,10 @@ automatically the right one. See the Results & Recommendation at the top.
 ## 7. Tear it all down
 
 ```bash
+# Deletes the entire kind cluster and all resources inside it
+# This removes everything — no leftover containers or namespaces
 kind delete cluster --name bakeoff
 ```
-
-Everything was local and disposable — this removes it completely.
-
----
-
-### Want to add Istio Gateway too?
-Istio is also Envoy-based. Install Istio (`istioctl install`) and use its
-`Gateway` + `VirtualService` against the same `httpbin`. Ask and I'll add a
-`2f` section + manifests.
 
 ---
 
