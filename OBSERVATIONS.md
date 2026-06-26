@@ -7,6 +7,19 @@ Test tool: `scripts/verify-headers.sh`
 
 ---
 
+## Diagrams
+
+| Diagram | File |
+|---------|------|
+| X-Forwarded headers injection flow | [docs/diagrams/x-forwarded-headers-flow.drawio](docs/diagrams/x-forwarded-headers-flow.drawio) |
+| TLS termination (HTTPS → gateway → HTTP) | [docs/diagrams/tls-termination-flow.drawio](docs/diagrams/tls-termination-flow.drawio) |
+| All-gateways request flow | [docs/diagrams/gateways-flow.drawio](docs/diagrams/gateways-flow.drawio) |
+| Ingress rule → controller flow | [docs/diagrams/ingress-flow.drawio](docs/diagrams/ingress-flow.drawio) |
+
+> Open `.drawio` files in [draw.io Desktop](https://github.com/jgraph/drawio-desktop/releases) or [app.diagrams.net](https://app.diagrams.net) to view/edit.
+
+---
+
 ## 1. X-Forwarded Headers
 
 ### What we tested
