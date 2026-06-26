@@ -72,7 +72,7 @@ mkcert -install
 
 ```bash
 # Clone the repo first (on a new laptop)
-git clone https://github.com/Sachin619619/gateway-bakeoff.git
+git clone https://github.com/Sachin619619/gateway-bakeoff.git  # replace with your fork URL if needed
 cd gateway-bakeoff
 
 # Creates a single-node Kubernetes cluster named "bakeoff" inside Docker
