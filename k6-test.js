@@ -3,6 +3,7 @@
 //
 //   k6 run k6-test.js                 # default: http://localhost:8080
 //   BASE=http://localhost:8080 k6 run k6-test.js
+//   BASE=http://172.18.0.200:80 k6 run k6-test.js
 //
 // Record from the summary: http_reqs (req/s), http_req_duration p(95),
 // and http_req_failed rate — put them in scorecard.md.

@@ -5,7 +5,11 @@ Compare ingress/gateway options **locally** by putting the same sample app
 
 **Everything runs only on your machine** — a local Kubernetes cluster (kind).
 Nothing is exposed to the internet. You reach each gateway via `kubectl
-port-forward` to `localhost`.
+port-forward` to `localhost` by default. Optional LoadBalancer mode is also
+available with MetalLB for testing a more realistic service exposure path.
+
+Dedicated LoadBalancer results are in
+[`docs/LOAD_BALANCER_RESULTS.md`](docs/LOAD_BALANCER_RESULTS.md).
 
 ## Gateways covered
 NGINX Ingress · Traefik · HAProxy · Kong · Envoy Gateway
@@ -114,6 +118,41 @@ One at a time avoids port conflicts and keeps measurements fair.
 
 > **macOS note:** `sed -i ''` is macOS syntax. On Linux use `sed -i` (no quotes).
 > If a port-forward target is not found, run `kubectl get svc -A` to check service names.
+
+---
+
+### Optional: local LoadBalancer mode
+
+The default bake-off uses `kubectl port-forward` because it is simple and works
+on every local machine. If you also want to test `service.type=LoadBalancer`,
+install MetalLB once:
+
+```bash
+bash scripts/install-metallb.sh
+```
+
+Then install the gateway with a LoadBalancer service instead of `ClusterIP`.
+Example for NGINX:
+
+```bash
+helm install nginx ingress-nginx/ingress-nginx -n ingress-nginx --create-namespace \
+  --set controller.service.type=LoadBalancer \
+  --set controller.admissionWebhooks.enabled=false \
+  --set controller.config.use-forwarded-headers="true" \
+  --set controller.config.compute-full-forwarded-for="true"
+```
+
+Verify the assigned IP and run the same load test against it:
+
+```bash
+bash scripts/verify-loadbalancer.sh ingress-nginx nginx-ingress-nginx-controller
+
+# Use the IP printed by the verification script:
+LB_IP="172.18.0.200" # replace with the IP printed by the script
+BASE="http://${LB_IP}:80" k6 run k6-test.js
+```
+
+Full steps are in **[docs/LOAD_BALANCER.md](docs/LOAD_BALANCER.md)**.
 
 ---
 
@@ -319,6 +358,10 @@ curl -s localhost:8080/get | head
 # holds for 1 minute, then ramps down. Total ~90s.
 # Thresholds: p95 latency < 500ms, error rate < 1%
 k6 run k6-test.js
+
+# If testing LoadBalancer mode, override the target:
+LB_IP="172.18.0.200" # replace with the IP printed by the script
+BASE="http://${LB_IP}:80" k6 run k6-test.js
 ```
 
 From the k6 summary, record into `scorecard.md`:

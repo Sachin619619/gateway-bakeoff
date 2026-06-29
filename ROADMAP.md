@@ -13,9 +13,11 @@
 9. ✅ HTTP → HTTPS TLS termination — mkcert cert generated, stored as K8s secret, configured on NGINX and Traefik
 10. ✅ Block diagrams added — X-Forwarded headers flow and TLS termination flow with full step-by-step visuals
 11. ✅ OBSERVATIONS.md updated with results, diagrams, and summary table
+12. ✅ Local LoadBalancer mode added — MetalLB setup helper, verification script, and operating guide
+13. ✅ LoadBalancer mode benchmark completed — NGINX, Traefik, HAProxy, Kong, and Envoy Gateway tested through the MetalLB IP path
 
 ## Next Tasks
 
 1. 🔲 IP whitelisting and blacklisting — configure allow/deny rules per gateway (NGINX `allow/deny`, Kong IP restriction plugin, etc.)
-2. 🔲 X-Forwarded headers + TLS — test HAProxy, Kong, Envoy (blocked earlier due to Docker crash)
-3. 🔲 X-Forwarded-Port — add and verify port passthrough alongside existing headers
+2. 🔲 Header normalization — compare each gateway's exact forwarded-header set and decide whether to standardize it
+3. 🔲 X-Forwarded-Port — add and verify port passthrough where the gateway does not emit it by default

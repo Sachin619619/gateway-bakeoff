@@ -35,6 +35,20 @@ Ranked by throughput. All gateways: **0% errors** (every request succeeded).
 | API-gateway features  |       |         |         |      |       |
 | Setup effort (1–5)    |       |         |         |      |       |
 
+## LoadBalancer Mode
+
+Local LoadBalancer support is implemented through MetalLB. On Docker Desktop
+for macOS, the MetalLB IP is reachable from inside the kind/Docker network, so
+the k6 LoadBalancer benchmark was run as a pod in the cluster.
+
+| Gateway | External IP assigned | HTTP via LB IP | HTTPS via LB IP | k6 via LB IP |
+|---------|----------------------|----------------|-----------------|--------------|
+| NGINX   | 172.19.0.200         | Yes            | Yes             | 24,093 req/s, p95 4.69 ms, 0% errors |
+| Traefik | 172.19.0.200         | Yes            | Yes             | 24,069 req/s, p95 4.44 ms, 0% errors |
+| HAProxy | 172.19.0.200         | Yes            | Yes             | 24,375 req/s, p95 5.06 ms, 0% errors |
+| Kong    | 172.19.0.200         | Yes            | Yes             | 21,709 req/s, p95 4.86 ms, 0% errors |
+| Envoy   | 172.19.0.200         | Yes            | Yes             | 18,708 req/s, p95 5.99 ms, 0% errors |
+
 ## Decision
 
 - **Overall pick (best balance): NGINX Ingress (+ ModSecurity WAF)** — mid-pack

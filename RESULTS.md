@@ -33,15 +33,17 @@ the correct client IP, protocol, and host through each gateway.
 |---------|----------------|-------------------|------------------|---------------|
 | NGINX | 203.0.113.99, 127.0.0.1 | https | localhost | Yes — 2 extra flags |
 | Traefik | 127.0.0.1 | https | localhost | No — works by default |
-| HAProxy | not tested | not tested | not tested | — |
-| Kong | not tested | not tested | not tested | — |
-| Envoy | not tested | not tested | not tested | — |
+| HAProxy | 10.244.0.1 | https | not emitted | No extra config in this test |
+| Kong | 10.244.0.1 | https | localhost | No extra config in this test |
+| Envoy | 10.244.0.35 | https | not emitted | Gateway API HTTPS listener added |
 
 Key findings:
 - NGINX needs use-forwarded-headers=true and compute-full-forwarded-for=true flags at install
 - NGINX appends its own gateway IP to X-Forwarded-For (full hop chain)
 - Traefik injects all 3 headers automatically with zero config
-- Both correctly passed X-Forwarded-Proto as https after TLS termination
+- All five correctly passed X-Forwarded-Proto as https after TLS termination
+- Kong passed X-Forwarded-Host; HAProxy and Envoy did not emit it by default in
+  this local LoadBalancer verification
 
 ---
 
@@ -54,14 +56,16 @@ Kubernetes TLS secret, and configured each gateway to serve HTTPS.
 |---------|------------|-----------|------------------------|
 | NGINX | Yes — HTTP/2 200 | Own self-signed cert (ignores mkcert) | Yes — 308 Redirect |
 | Traefik | Yes — HTTP/2 200 | mkcert cert (locally trusted) | Yes — auto redirect |
-| HAProxy | not tested | not tested | not tested |
-| Kong | not tested | not tested | not tested |
-| Envoy | not tested | not tested | not tested |
+| HAProxy | Yes | Kubernetes TLS secret | Redirect not measured in this retest |
+| Kong | Yes | Kubernetes TLS secret | Redirect not measured in this retest |
+| Envoy | Yes | Kubernetes TLS secret | Gateway API listener, redirect not configured |
 
 Key findings:
 - Traefik automatically picked up the mkcert TLS secret — no extra config needed
 - NGINX defaulted to its own Fake Certificate even with the secret present
-- Both gateways returned 308 Permanent Redirect when client hit HTTP :8080
+- NGINX and Traefik returned 308 Permanent Redirect when client hit HTTP :8080
+- HAProxy, Kong, and Envoy Gateway were verified for HTTPS termination through
+  the LoadBalancer IP
 - Backend pod only ever sees plain HTTP — TLS is fully terminated at the gateway
 - X-Forwarded-Proto: https tells the backend the original request was secure
 
@@ -94,10 +98,55 @@ and has no idea who the real client is or how they connected.
 
 ---
 
-## 6. Pending (Docker crashed during testing)
+## 6. Earlier Pending Items
 
-- HAProxy — X-Forwarded headers and TLS not tested
-- Kong — X-Forwarded headers and TLS not tested
-- Envoy — X-Forwarded headers and TLS not tested
-- X-Forwarded-Port — not added yet, planned next
-- IP whitelisting/blacklisting — not implemented yet
+- Docker was recovered and the LoadBalancer benchmark was completed for all
+  five gateways.
+- HAProxy, Kong, and Envoy Gateway were retested through the MetalLB
+  LoadBalancer path.
+- IP whitelisting/blacklisting is still not implemented.
+
+---
+
+## 7. LoadBalancer Mode
+
+Tested on: 2026-06-29, local kind cluster, MetalLB `172.19.0.200-172.19.0.250` pool
+Backend: httpbin (2 replicas)
+Load test: k6, 50 virtual users, ~90 seconds
+
+Important local note: on Docker Desktop for macOS, the MetalLB Docker-network IP
+was reachable from inside the kind/Docker network, but not directly from the
+macOS host. For that reason, the LoadBalancer benchmark was run as a k6 pod in
+the cluster against the MetalLB IP.
+
+| Gateway | LB IP | HTTP via LB IP | HTTPS via LB IP | Req/s | p50 | p95 | Errors |
+|---------|-------|----------------|-----------------|-------|-----|-----|--------|
+| NGINX | 172.19.0.200 | Yes | Yes | 24,093 | 1.18 ms | 4.69 ms | 0% |
+| Traefik | 172.19.0.200 | Yes | Yes | 24,069 | 1.26 ms | 4.44 ms | 0% |
+| HAProxy | 172.19.0.200 | Yes | Yes | 24,375 | 1.02 ms | 5.06 ms | 0% |
+| Kong | 172.19.0.200 | Yes | Yes | 21,709 | 1.38 ms | 4.86 ms | 0% |
+| Envoy Gateway | 172.19.0.200 | Yes | Yes | 18,708 | 1.50 ms | 5.99 ms | 0% |
+
+Verification details:
+- MetalLB assigned `172.19.0.200`
+- NGINX, Traefik, HAProxy, Kong, and Envoy Gateway served HTTP through the
+  LoadBalancer IP
+- NGINX, Traefik, HAProxy, Kong, and Envoy Gateway served HTTPS through the
+  LoadBalancer IP
+- NGINX, Traefik, and Kong forwarded `X-Forwarded-For`,
+  `X-Forwarded-Host`, `X-Forwarded-Port`, and `X-Forwarded-Proto`
+- HAProxy forwarded `X-Forwarded-For` and `X-Forwarded-Proto`
+- Envoy Gateway forwarded `X-Forwarded-For` and `X-Forwarded-Proto`
+- k6 thresholds passed for all five gateways
+
+Result: all five gateways work correctly in local LoadBalancer mode for HTTP
+traffic and terminate TLS correctly.
+Throughput is much higher than the earlier host `port-forward` results because
+this test runs from inside the cluster network and avoids the local
+`kubectl port-forward` bottleneck. Treat these as LoadBalancer-mode local
+measurements, not direct apples-to-apples replacements for the earlier
+port-forward table.
+
+Note: Envoy Gateway uses Gateway API instead of classic Kubernetes Ingress.
+Its HTTPS test requires TLS SNI to match the listener hostname, so the
+verification used `curl --resolve localhost:443:172.19.0.200`.

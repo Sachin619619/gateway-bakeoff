@@ -127,6 +127,31 @@ kubectl create secret tls httpbin-tls --cert=certs/tls.crt --key=certs/tls.key
 
 ---
 
+### 1b. Optional: local LoadBalancer mode
+
+Use this only when you want to test `service.type=LoadBalancer` locally instead
+of `kubectl port-forward`. MetalLB gives the local kind cluster an external IP
+pool.
+
+```bash
+bash scripts/install-metallb.sh                         # install MetalLB and create a local IP pool
+
+# Example: install NGINX with a LoadBalancer service
+helm install nginx ingress-nginx/ingress-nginx -n ingress-nginx --create-namespace \
+  --set controller.service.type=LoadBalancer \
+  --set controller.admissionWebhooks.enabled=false \
+  --set controller.config.use-forwarded-headers="true" \
+  --set controller.config.compute-full-forwarded-for="true"
+
+bash scripts/verify-loadbalancer.sh ingress-nginx nginx-ingress-nginx-controller   # verify HTTP/HTTPS via the assigned IP
+LB_IP="172.18.0.200"                                                              # replace with the IP printed by the script
+BASE="http://${LB_IP}:80" k6 run k6-test.js                                        # load test the LoadBalancer path
+```
+
+Full details: [docs/LOAD_BALANCER.md](docs/LOAD_BALANCER.md).
+
+---
+
 ## 2. Test each gateway (run one block, record results, move to next)
 
 > Each block follows the same pattern, explained inline:
