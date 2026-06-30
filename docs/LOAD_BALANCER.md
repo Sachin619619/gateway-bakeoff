@@ -13,6 +13,13 @@ client
   -> httpbin backend
 ```
 
+## Interaction Diagram
+
+The sequence-style block diagram below shows how the local LoadBalancer path
+works in this bake-off project:
+
+![Local LoadBalancer request flow](diagrams/load-balancer-sequence.png)
+
 ## Why MetalLB Is Needed
 
 In a cloud Kubernetes cluster, `service.type=LoadBalancer` asks the cloud

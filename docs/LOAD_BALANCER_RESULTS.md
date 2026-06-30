@@ -21,6 +21,10 @@ was reachable from inside the kind/Docker network, but not directly from the
 macOS host. Because of that, the benchmark was run as a k6 pod inside the
 cluster against the MetalLB IP.
 
+## Interaction Diagram
+
+![Local LoadBalancer request flow](diagrams/load-balancer-sequence.png)
+
 ## Result Table
 
 | Gateway | LB IP | HTTP via LB IP | HTTPS via LB IP | Req/s | p50 | p95 | Errors |

@@ -10,6 +10,8 @@ available with MetalLB for testing a more realistic service exposure path.
 
 Dedicated LoadBalancer results are in
 [`docs/LOAD_BALANCER_RESULTS.md`](docs/LOAD_BALANCER_RESULTS.md).
+The LoadBalancer request-flow PNG is in
+[`docs/diagrams/load-balancer-sequence.png`](docs/diagrams/load-balancer-sequence.png).
 
 ## Gateways covered
 NGINX Ingress · Traefik · HAProxy · Kong · Envoy Gateway
