@@ -12,6 +12,8 @@ Dedicated LoadBalancer results are in
 [`docs/LOAD_BALANCER_RESULTS.md`](docs/LOAD_BALANCER_RESULTS.md).
 The LoadBalancer request-flow PNG is in
 [`docs/diagrams/load-balancer-sequence.png`](docs/diagrams/load-balancer-sequence.png).
+The proposed next flow for Cert Manager TLS automation is in
+[`docs/CERT_MANAGER_NEXT_FLOW.md`](docs/CERT_MANAGER_NEXT_FLOW.md).
 
 ## Gateways covered
 NGINX Ingress · Traefik · HAProxy · Kong · Envoy Gateway
