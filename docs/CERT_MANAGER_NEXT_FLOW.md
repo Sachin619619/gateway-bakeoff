@@ -1,7 +1,7 @@
-# Cert Manager Next Flow
+# Gateway Bake-off Next Flows
 
-This document explains where Cert Manager fits after the completed gateway
-bake-off work.
+This document explains the next tasks after the completed gateway bake-off
+work, based on the larger on-premise architecture flow.
 
 ## What Is Already Completed
 
@@ -107,7 +107,7 @@ sequenceDiagram
     LB-->>User: HTTPS response
 ```
 
-## Next POC Goal
+## Next POC 1: Cert Manager
 
 Build a local Cert Manager POC that proves:
 
@@ -118,11 +118,99 @@ Build a local Cert Manager POC that proves:
 - HTTPS request works end to end.
 - Certificate status and renewal readiness can be checked.
 
+## Next POC 2: Scaling And High Availability
+
+The larger on-premise view also shows multiple nodes and replicas. That means
+scaling and high availability can be handled as a separate next POC.
+
+Current bake-off scaling state:
+
+```text
+Gateway / Ingress
+  -> Backend service
+  -> Fixed backend pods
+```
+
+Next scaling flow:
+
+```text
+Gateway / Ingress
+  -> Backend service
+  -> Multiple backend pods
+  -> HPA or manual scale test
+  -> Pod failure recovery test
+```
+
+This POC should prove:
+
+- Backend can run with multiple replicas.
+- Gateway continues routing when there are multiple backend pods.
+- Kubernetes service distributes traffic to available pods.
+- Manual scale-up and scale-down works.
+- HPA can increase or decrease pod replicas based on load.
+- If one pod is deleted, Kubernetes recreates it.
+- Gateway still serves traffic during pod restart or replica changes.
+- k6 can confirm traffic still works during scaling.
+
+Simple scaling sequence:
+
+```text
+1. Deploy backend with multiple replicas.
+2. Send traffic through gateway.
+3. Confirm requests reach different backend pods.
+4. Increase backend replicas.
+5. Confirm gateway still routes traffic correctly.
+6. Delete one backend pod.
+7. Confirm Kubernetes recreates the pod.
+8. Confirm gateway still returns successful responses.
+9. Add HPA.
+10. Generate load.
+11. Confirm pod count increases.
+12. Stop load.
+13. Confirm pod count can reduce again.
+```
+
+Simple scaling diagram:
+
+```mermaid
+sequenceDiagram
+    participant User as User / k6
+    participant GW as Gateway / Ingress
+    participant SVC as Backend Service
+    participant HPA as HPA
+    participant PodA as Backend Pod A
+    participant PodB as Backend Pod B
+    participant PodC as New Backend Pod
+
+    User->>GW: Send traffic
+    GW->>SVC: Forward request
+    SVC->>PodA: Route some requests
+    SVC->>PodB: Route some requests
+
+    HPA->>HPA: Observe CPU/load metric
+    HPA->>PodC: Increase replica count
+
+    User->>GW: Continue traffic
+    GW->>SVC: Forward request
+    SVC->>PodC: Route traffic to new replica
+
+    PodA-->>SVC: Pod deleted or restarted
+    SVC->>PodB: Continue routing to healthy pod
+    SVC->>PodC: Continue routing to healthy pod
+    SVC-->>GW: Return response
+    GW-->>User: Successful response
+```
+
 ## Simple Manager Explanation
 
 The gateway bake-off already proved routing, TLS termination, forwarded
-headers, load testing, and LoadBalancer access. The next logical task is Cert
-Manager because the current TLS certificate is manual. Cert Manager automates
-certificate creation and stores the result as a Kubernetes TLS secret that the
-gateway can use for HTTPS.
+headers, load testing, and LoadBalancer access.
 
+The next logical task is Cert Manager because the current TLS certificate is
+manual. Cert Manager automates certificate creation and stores the result as a
+Kubernetes TLS secret that the gateway can use for HTTPS.
+
+After that, Scaling and HA is the next task because the larger on-premise view
+shows multiple nodes, replicas, and high availability. That POC should prove
+that traffic continues to work while backend pods scale up, scale down, or
+restart.
